@@ -1,7 +1,8 @@
 const fs = require('fs');
-const request = require("request");
+const fetch = require("node-fetch");
 const sqlite3 = require('sqlite3');
 const Discord = require('discord.js');
+const dateFormat = require('dateformat');
 
 const config = require("./config.json");
 
@@ -77,146 +78,6 @@ const helpInstructions = `\`\`\` \
   ${PREFIX} tournament new \
   \`\`\``;
 
-function getTournamentForm(msg) {
-  let form = new Discord.MessageAttachment('assets/tournament_form.json');
-  msg.channel.send('Fill out the form and return it with the new command', form);
-}
-
-function tournamentJSONToString(json) {
-  let string = `[` + json['region'] + `][` + json['device'] + `] **` + json["name"] + `**\n\n` + `**Date:** ` + json["date"] + ` at ` + json["24_hour_time"] + ` EST\n\n` + `**Description:**` + json["description"] + `\n\n` + `**Rules:**` + json["rules"] + `\n\n`;
-
-  return string;
-}
-
-function newTournament(msg) {
-  if (msg.attachments) {
-    request(msg.attachments.first().url, function (err, response, body) {
-      if (err) {
-        msg.channel.send(`**Error:** Unable to read attachment.`);
-      } else {
-        try {
-            let tournament_json = JSON.parse(body);
-            let tournament_string = tournamentJSONToString(tournament_json);
-            msg.channel.send(tournament_string);
-
-            db.run("INSERT INTO Tournaments(name) VALUES(?)", [tournament_json["name"]], function(err) {
-              if(null == err){
-                  // row inserted successfully
-                  fs.writeFile(`tournaments/${this.lastID}.json`, body, function(err) {
-                    if(err) {
-                      console.log(err);
-                      msg.channel.send(`**Error:** Unable to save the tournament.`);
-                      db.run(`DELETE FROM Tournaments WHERE id=?`, this.lastID, function(err) {
-                        if (err) {
-                            msg.channel.send(`**Error:** Problems connecting to database. There might be elements in the Tournaments database that are not linked to files.`);
-                        }
-                      });
-                    } else {
-                      msg.channel.send(`Tournament was successfully created.`);
-                    }
-                  });
-
-              } else {
-                console.log(err);
-                //Oops something went wrong
-                msg.channel.send(`**Error:** Unable to save the tournament.`);
-              }
-            });
-        } catch (err) {
-          console.log(err);
-          msg.channel.send(`**Error:** The tournament form needs to be a JSON file. If it is then you might have errors in the formatting.`);
-        }
-      }
-
-    });
-  } else {
-    msg.channel.send(`You need to attach the JSON form with this command. To get the form use the following command: \n\n \`${PREFIX} tournament form\``);
-  }
-}
-
-function listTournaments(msg) {
-  db.all(`SELECT id, name FROM Tournaments ORDER BY name`, [], (err, rows) => {
-    if (err) {
-      console.log(err);
-      msg.channel.send(`**Error:** Had trouble querying database.`);
-    } else {
-      msg.channel.send(`Tournaments: (name: id)`);
-      rows.forEach((row) => {
-        msg.channel.send(row.name + `: ` + row.id);
-      });
-    }
-  });
-}
-
-function deleteTournament(id, callback = function(err) {}) {
-  let error = 0;
-  // Delete from Tournaments table
-  db.run(`DELETE FROM Tournaments WHERE id=?`, id, function(err) {
-    if (err) {
-        error &= ERROR_CODES.DATABASE_ERROR;
-    }
-  });
-
-  // Delete from Users_Tournaments table
-  db.run(`DELETE FROM Users_Tournaments WHERE tournament=?`, id, function(err) {
-    if (err) {
-        error &= ERROR_CODES.DATABASE_ERROR;
-    }
-  });
-
-  // delete json file
-  fs.unlink(`tournaments/${id}.json`, function (err) {
-      if (err) {
-        error &= ERROR_CODES.FILE_NOT_FOUND;
-      }
-  });
-
-  return error;
-}
-
-function postTournament(id) {
-  fs.readFile(`tournaments/${id}.json`, 'utf-8', (err, data) => {
-    if (err) {
-      return ERROR_CODES.FILE_NOT_FOUND;
-    }
-
-    let tournament_json = JSON.parse(data);
-    let tournament_string = tournamentJSONToString(tournament_json);
-
-    if (announcements_channel) {
-      announcements_channel.send(tournament_string).then(
-        message => {
-          message.react('✅');
-        });
-    } else {
-      return ERROR_CODES.CHANNEL_NOT_FOUND;
-    }
-  });
-
-  return 0;
-}
-
-function postPlayerRoleSelection(callback = function(msg) {}) {
-  if (role_selection_channel) {
-    role_selection_channel.send(PLAYER_ROLE_MESSAGE).then(
-      message => {
-        role_selection_message = message;
-
-        callback(message);
-
-        message.react('0⃣').
-          then(() => message.react('1⃣')).
-          then(() => message.react('2⃣')).
-          then(() => message.react('3⃣')).
-          then(() => message.react('4⃣')).
-          then(() => message.react('5⃣'));
-      });
-  } else {
-    return ERROR_CODES.CHANNEL_NOT_FOUND;
-  }
-
-  return 0;
-}
 
 const commandHandlerForCommandName = {};
 commandHandlerForCommandName['help'] = (msg, args) => {
@@ -270,6 +131,209 @@ commandHandlerForCommandName['tournament'] = (msg, args) => {
       msg.channel.send(`**Warning:** Following command not found: \n\n \`${PREFIX} tournament ${command}\``);
   }
 };
+
+function getTournamentForm(msg) {
+  let form = new Discord.MessageAttachment('assets/tournament_form.json');
+  msg.channel.send('Fill out the form and return it with the new command', form);
+}
+
+function tournamentJSONToString(json) {
+  let string = `[` + json['region'] + `][` + json['platform'] + `] **` + json["name"] + `**\n\n` + `**Date:** ` + json["date"] + ` at ` + json["24_hour_time"] + ` EST\n\n` + `**Description:**` + json["description"] + `\n\n` + `**Rules:**` + json["rules"] + `\n\n`;
+
+  return string;
+}
+
+function tournamentToString(obj) {
+  let date = new Date(obj['date']);
+
+  // Offset to EST
+  date = new Date(date.getTime() - 4 * 3600000);
+
+  let string = `[` + obj['region'] + `][` + obj['platform'] + `] **` + obj["name"] + `**\n\n` +
+  `**Date:** ` + dateFormat(date, "GMT:dddd, mmmm dS, yyyy, h:MM TT") + ` EST \n\n` +
+  `**Description:**` + obj["description"] + `\n\n` +
+  `**Rules:**` + obj["rules"] + `\n\n`;
+
+  return string;
+}
+
+
+async function getAttachment(msg) {
+  if (msg.attachments) {
+    const getData = async url => {
+      try {
+        const response = await fetch(url);
+        const json = await response.json();
+        return json;
+      } catch (error) {
+        console.log(error);
+        return null;
+      }
+    };
+
+    return await getData(msg.attachments.first().url);
+
+  } else {
+      msg.channel.send(`**Error:** You need to send an attachment.`);
+  }
+
+  return null;
+}
+
+async function newTournament(msg) {
+  // Get attachment
+  let json = await getAttachment(msg);
+
+  if (!json) {
+    console.log(`No json file.`);
+    msg.channel.send(`**Error:** The tournament form needs to be a JSON file. If it is then you might have errors in the formatting.`);
+    return;
+  }
+
+  // Turn to string
+  let tournament_string = tournamentJSONToString(json);
+  msg.channel.send(tournament_string);
+
+  // Get params
+  let name = json["name"] || "Unnamed";
+  let date = json["date"];
+  let time = json["24_hour_time"];
+
+  if (!date) {
+    msg.channel.send(`**Error:** You need to include a start date.`);
+    return;
+  }
+
+  if (!time) {
+    msg.channel.send(`**Error:** You need to include a start time.`);
+    return;
+  }
+
+  // Check date
+  const date_regex = /^\d{1,2}\/\d{1,2}\/\d{4}$/ ;
+  if (!date.match(date_regex))
+  {
+    msg.channel.send(`**Error:** Date is not in the correct format. It needs to be MM/DD/YYYY.`);
+    return;
+  }
+
+  let [month, day, year] = date.split('/');
+
+  const time_regex = /^\d{1,2}:\d{2}$/ ;
+  if (!time.match(time_regex))
+  {
+    msg.channel.send(`**Error:** Time is not in the correct format. It needs to be hh:mm.`);
+    return;
+  }
+
+  // Get EST Date
+  let start_date = new Date(`${year}-${month}-${day}T${time}:00Z`);
+
+  // Offset to GMT
+  start_date = new Date(start_date.getTime() + 4 * 3600000);
+
+  let region = json["region"] || "na";
+  let platform = json["platform"] || "pc";
+
+  let description = json["description"];
+  let rules = json["rules"];
+
+  console.log({
+    name: name,
+    date: start_date,
+    region: region,
+    platform: platform,
+    description: description,
+    rules: rules
+  })
+
+  // Save to database
+  db.run("INSERT INTO Tournaments(name, date, region, platform, description, rules) VALUES(?,?,?,?,?,?)", [name, start_date.toISOString(), region, platform, description, rules], function(err) {
+    if (err) {
+      console.log(err);
+      //Oops something went wrong
+      msg.channel.send(`**Error:** Unable to save the tournament in the database.`);
+    }
+  });
+}
+
+function listTournaments(msg) {
+  db.all(`SELECT id, name FROM Tournaments ORDER BY name`, [], (err, rows) => {
+    if (err) {
+      console.log(err);
+      msg.channel.send(`**Error:** Had trouble querying database.`);
+    } else {
+      msg.channel.send(`Tournaments: (name: id)`);
+      rows.forEach((row) => {
+        msg.channel.send(row.name + `: ` + row.id);
+      });
+    }
+  });
+}
+
+function deleteTournament(id) {
+  let error = 0;
+  // Delete from Tournaments table
+  db.run(`DELETE FROM Tournaments WHERE id=?`, id, function(err) {
+    if (err) {
+        error &= ERROR_CODES.DATABASE_ERROR;
+    }
+  });
+
+  // Delete from Users_Tournaments table
+  db.run(`DELETE FROM Users_Tournaments WHERE tournament=?`, id, function(err) {
+    if (err) {
+        error &= ERROR_CODES.DATABASE_ERROR;
+    }
+  });
+
+  return error;
+}
+
+function postTournament(id) {
+  console.log(`Post Tournament: ${id}`);
+
+  db.get(`SELECT * FROM Tournaments WHERE id=?`, id, (err, row) => {
+    if (err) {
+      console.log(err);
+      return ERROR_CODES.DATABASE_ERROR;
+    } else {
+      let tournament_string = tournamentToString(row);
+      if (announcements_channel) {
+        announcements_channel.send(tournament_string).then(
+          message => {
+            message.react('✅');
+          });
+      } else {
+        return ERROR_CODES.CHANNEL_NOT_FOUND;
+      }
+    }
+  });
+
+  return 0;
+}
+
+function postPlayerRoleSelection(callback = function(msg) {}) {
+  if (role_selection_channel) {
+    role_selection_channel.send(PLAYER_ROLE_MESSAGE).then(
+      message => {
+        role_selection_message = message;
+
+        callback(message);
+
+        message.react('0⃣').
+          then(() => message.react('1⃣')).
+          then(() => message.react('2⃣')).
+          then(() => message.react('3⃣')).
+          then(() => message.react('4⃣')).
+          then(() => message.react('5⃣'));
+      });
+  } else {
+    return ERROR_CODES.CHANNEL_NOT_FOUND;
+  }
+
+  return 0;
+}
 
 function doesRoleExist(guild, name) {
   return guild.roles.filter(role => role.name == name).size > 0;
