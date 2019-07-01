@@ -313,21 +313,19 @@ function postTournament(id) {
   return 0;
 }
 
-function postPlayerRoleSelection(callback = function(msg) {}) {
+async function postPlayerRoleSelection() {
   if (role_selection_channel) {
-    role_selection_channel.send(PLAYER_ROLE_MESSAGE).then(
-      message => {
-        role_selection_message = message;
+    let message = await role_selection_channel.send(PLAYER_ROLE_MESSAGE);
 
-        callback(message);
+    role_selection_message = message;
 
-        message.react('0⃣').
-          then(() => message.react('1⃣')).
-          then(() => message.react('2⃣')).
-          then(() => message.react('3⃣')).
-          then(() => message.react('4⃣')).
-          then(() => message.react('5⃣'));
-      });
+    await message.react('0⃣');
+    await message.react('1⃣');
+    await message.react('2⃣');
+    await message.react('3⃣');
+    await message.react('4⃣');
+    await message.react('5⃣');
+
   } else {
     return ERROR_CODES.CHANNEL_NOT_FOUND;
   }
@@ -336,111 +334,115 @@ function postPlayerRoleSelection(callback = function(msg) {}) {
 }
 
 function doesRoleExist(guild, name) {
-  return guild.roles.filter(role => role.name == name).size > 0;
+  return guild.roles.find(role => role.name == name);
 }
 
 function doesChannelExist(guild, name) {
-  return guild.channels.filter(channel => channel.name == name).size > 0;
+  return guild.channels.find(channel => channel.name == name);
 }
 
 function getRole(guild, name) {
-  return guild.roles.filter(role => role.name == name);
+  return guild.roles.find(role => role.name == name);
 }
 
 function getRolesWithPrefix(guild, prefix) {
   return guild.roles.filter(role => role.name.startsWith(prefix));
 }
 
-function createRole(guild, name, options = {}, callback = function(role) {}) {
+async function createRole(guild, name, options = {}) {
   // Create a new role
   if (!doesRoleExist(guild, name)) {
     console.log(`Creating Role: ${name}`);
-    guild.createRole(options).then(role => callback(role))
-      .catch(console.error);
+    return await guild.createRole(options);
   } else {
-    let role = getRole(guild, name).values().next().value;
-    callback(role);
+    return getRole(guild, name);
   }
 }
 
 function getChannel(guild, name) {
-  return guild.channels.filter(channel => channel.name == name);
+  return guild.channels.find(channel => channel.name == name);
 }
 
-function createChannel(guild, name, options = {}, callback = function(channel) {}) {
+async function createChannel(guild, name, options = {}) {
   // Create a new role
   if (!doesChannelExist(guild, name)) {
     console.log(`Creating channel: ${name}`);
-    guild.createChannel(name, options).then(channel => callback(channel))
-      .catch(console.error);
+    return await guild.createChannel(name, options);
   } else {
-      let channel = getChannel(guild, name).values().next().value;
-      callback(channel);
+      return getChannel(guild, name);
   }
 }
 
-function createTeamChannels(guild, number_of_teams) {
+async function createTeamChannels(guild, number_of_teams) {
+  const bot_role = guild.roles.find(r => r.name === OW_TOURNAMENT_BOT_ROLE);
+  const manager_role = guild.roles.find(role => role.name == OW_TOURNAMENT_MANAGER_ROLE);
+
   for (var i = 0; i < number_of_teams; i++) {
     let team_role = OW_TOURNAMENT_TEAM_ROLE_PREFIX + (i+1);
     let team_channel = OW_TOURNAMENT_TEAM_CHANNEL_PREFIX + (i+1);
 
-    createRole(guild, team_role, {
+    // Create Team Role
+    let role = await createRole(guild, team_role, {
       name: team_role,
-      color: 'WHITE',
+      color: 'ORANGE',
       permissions: 0,
-    }, team_role => {
+    });
+
       // Create Tournament Category
-      createChannel(guild, OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL, options = {
-        type:'category',
-      }, category => {
-        // Create Team Text Channel
-        createChannel(guild, team_channel + `-text`, options = {
-          type:'text',
-          parent: category,
-          permissionOverwrites: [
-          {
-            id: guild.defaultRole.id,
-            deny: ['VIEW_CHANNEL'],
-          },
-          {
-            id: team_role,
-            allow: ['VIEW_CHANNEL', 'SEND_MESSAGES', 'ATTACH_FILES'],
-          },
-          {
-            id: guild.roles.find(role => role.name == OW_TOURNAMENT_MANAGER_ROLE),
-            allow: ['VIEW_CHANNEL', 'SEND_MESSAGES', 'ATTACH_FILES', 'MANAGE_MESSAGES'],
-          },
-          {
-            id: guild.roles.find(role => role.name == OW_TOURNAMENT_BOT_ROLE),
-            allow: ['VIEW_CHANNEL', 'SEND_MESSAGES', 'ATTACH_FILES', 'MANAGE_MESSAGES'],
-          },
-          ],
+    let category = await createChannel(guild,     OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL, options = {
+      type:'category',
+      permissionOverwrites: [
+        {
+          id: guild.defaultRole.id,
+          deny: 2146958847
+        },
+        {
+          id: manager_role,
+          allow: 326630743,
+        },
+        {
+          id: bot_role,
+          allow: 326630743,
+        },
+      ],
+    });
+
+    // Create Team Text Channel
+    createChannel(guild, team_channel + `-text`, options = {
+      type:'text',
+      parent: category,
+    }, channel => {
+      announcements_channel = channel;
+      channel.lockPermissions().then(() => {
+        channel.overwritePermissions(guild.defaultRole, {
+          VIEW_CHANNEL: false,
         });
 
-        // Create Team Voice Channel
-        createChannel(guild, team_channel + `-voice`, options = {
-          type:'voice',
-          parent: category,
-          permissionOverwrites: [
-          {
-            id: guild.defaultRole.id,
-            deny: ['VIEW_CHANNEL'],
-          },
-          {
-            id: team_role,
-            allow: ['VIEW_CHANNEL', 'CONNECT', 'SPEAK'],
-          },
-          {
-            id: guild.roles.find(role => role.name == OW_TOURNAMENT_MANAGER_ROLE),
-            allow: ['VIEW_CHANNEL', 'CONNECT', 'SPEAK', 'MUTE_MEMBERS'],
-          },
-          {
-            id: guild.roles.find(role => role.name == OW_TOURNAMENT_BOT_ROLE),
-            allow: ['VIEW_CHANNEL', 'CONNECT', 'SPEAK', 'MUTE_MEMBERS'],
-          },
-          ],
+        channel.overwritePermissions(role, {
+          VIEW_CHANNEL: true,
+          SEND_MESSAGES: true,
+          ATTACH_FILES: true,
         });
-      });
+      })
+    });
+
+    // Create Team Voice Channel
+    createChannel(guild, team_channel + `-voice`, options = {
+      type:'voice',
+      parent: category,
+    }, channel => {
+      announcements_channel = channel;
+      channel.lockPermissions().then(() => {
+        channel.overwritePermissions(guild.defaultRole, {
+          VIEW_CHANNEL: false,
+        });
+
+        channel.overwritePermissions(role, {
+          VIEW_CHANNEL: true,
+          CONNECT: true,
+          SPEAK: true,
+        });
+      })
     });
   }
 }
@@ -450,125 +452,109 @@ function removeTeamChannels(guild) {
   let roles = getRolesWithPrefix(guild, OW_TOURNAMENT_TEAM_ROLE_PREFIX);
   roles.forEach((role, key, map) => role.delete());
 
-  let category = getChannel(guild, OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL).values().next().value;;
+  let category = getChannel(guild, OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL);
   // Delete all channels
   category.children.forEach((channel, key, map) => channel.delete());
+
+  // Delete Category
+  category.delete();
 }
 
-function setup(guild) {
+async function setup(guild) {
   const bot_role = guild.roles.find(r => r.name === OW_TOURNAMENT_BOT_ROLE);
 
   // Create Manager Role
-  createRole(guild, OW_TOURNAMENT_MANAGER_ROLE, {
+  let role = await createRole(guild, OW_TOURNAMENT_MANAGER_ROLE, {
     name: OW_TOURNAMENT_MANAGER_ROLE,
     color: 'BLUE',
     permissions: 292744535,
-  }, role => {
+  });
+
     // Create Tournament Category
-    createChannel(guild, OW_TOURNAMENT_CATEGORY_CHANNEL, options = {
-      type:'category',
-      permissionOverwrites: [
-        {
-          id: guild.defaultRole.id,
-          deny: 2146958847
-        },
-        {
-          id: role.id,
-          allow: 326630743,
-        },
-        {
-          id: bot_role.id,
-          allow: 326630743,
-        },
-      ],
-    }, category => {
-      // Create Announcements
-      createChannel(guild, ANNOUNCEMENTS_CHANNEL, options = {
-        type:'text',
-        parent: category,
-      }, channel => {
-        announcements_channel = channel;
-        channel.lockPermissions().then(() =>
-          channel.overwritePermissions(guild.defaultRole, {
-            VIEW_CHANNEL: true,
-            READ_MESSAGE_HISTORY: true,
-          })
-        );
-      });
+  let category = await createChannel(guild, OW_TOURNAMENT_CATEGORY_CHANNEL, options = {
+    type:'category',
+    permissionOverwrites: [
+      {
+        id: guild.defaultRole.id,
+        deny: 2146958847
+      },
+      {
+        id: role.id,
+        allow: 326630743,
+      },
+      {
+        id: bot_role.id,
+        allow: 326630743,
+      },
+    ],
+  });
 
-      // Create Form Submission
-      createChannel(guild, FORM_SUBMISSION_CHANNEL, options = {
-        type:'text',
-        parent: category,
-      }, channel => {
-        form_submission_channel = channel;
-        channel.lockPermissions();
-      });
+  // Create Announcements
+  createChannel(guild, ANNOUNCEMENTS_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }, channel => {
+    announcements_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+      })
+    );
+  });
 
-      // Create Role Selection
-      createChannel(guild, ROLE_SELECTION_CHANNEL, options = {
-        type:'text',
-        parent: category,
-      }, channel => {
-        role_selection_channel = channel;
-        channel.lockPermissions().then(() =>
-          channel.overwritePermissions(guild.defaultRole, {
-            VIEW_CHANNEL: true,
-            READ_MESSAGE_HISTORY: true,
-          })
-        );
-        // TODO: Post Role Selection
-        //postPlayerRoleSelection();
-      });
+  // Create Form Submission
+  createChannel(guild, FORM_SUBMISSION_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }, channel => {
+    form_submission_channel = channel;
+    channel.lockPermissions();
+  });
 
-      // Create Bnet Submission
-      createChannel(guild, BNET_SUBMISSION_CHANNEL, options = {
-        type:'text',
-        parent: category,
-      }, channel => {
-        bnet_submission_channel = channel;
-        channel.lockPermissions().then(() =>
-          channel.overwritePermissions(guild.defaultRole, {
-            VIEW_CHANNEL: true,
-            READ_MESSAGE_HISTORY: true,
-            SEND_MESSAGES: true,
-          })
-        );
-      });
+  // Create Role Selection
+  createChannel(guild, ROLE_SELECTION_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }, channel => {
+    role_selection_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+      })
+    );
+    // TODO: Post Role Selection
+    //postPlayerRoleSelection();
+  });
 
-      // Create Waiting Room
-      createChannel(guild, WAITING_ROOM_CHANNEL, options = {
-        type:'voice',
-        parent: category,
-      }, channel => {
-        waiting_room_channel = channel;
-        channel.lockPermissions().then(() =>
-          channel.overwritePermissions(guild.defaultRole, {
-            VIEW_CHANNEL: true,
-            CONNECT: true,
-          })
-        );
-      });
-    });
+  // Create Bnet Submission
+  createChannel(guild, BNET_SUBMISSION_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }, channel => {
+    bnet_submission_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+        SEND_MESSAGES: true,
+      })
+    );
+  });
 
-    // Create Tournament Team Category
-    createChannel(guild, OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL, options = {
-      type:'category',
-      permissionOverwrites: [
-        {
-          id: guild.defaultRole.id,
-          deny: 2146958847
-        },
-        {
-          id: role.id,
-          allow: 292744535,
-        },
-        {
-          id: bot_role.id,
-          allow: 292744535,
-        },
-      ],
-    });
+  // Create Waiting Room
+  createChannel(guild, WAITING_ROOM_CHANNEL, options = {
+    type:'voice',
+    parent: category,
+  }, channel => {
+    waiting_room_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        CONNECT: true,
+      })
+    );
   });
 }
 
@@ -578,6 +564,7 @@ client.on('ready', () => {
   var guild = client.guilds.get(GUILD_ID);
 
   setup(guild);
+  //createTeamChannels(guild, 4);
 
   client.user.setStatus("online");
   console.log('Connected and ready.');
