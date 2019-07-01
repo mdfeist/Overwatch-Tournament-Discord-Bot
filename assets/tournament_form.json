@@ -1,9 +1,9 @@
 {
   "name": "",
   "date": "MM/DD/YYYY",
-  "24_hour_time": "22:00",
-  "region": "NA",
-  "device": "PC",
+  "24_hour_time": "hh:mm",
+  "region": "na",
+  "platform": "pc",
   "description": "",
   "rules": "",
   "divisions": 1,
