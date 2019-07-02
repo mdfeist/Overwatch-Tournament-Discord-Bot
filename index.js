@@ -16,9 +16,6 @@ const db = new sqlite3.Database('db/tournament.sqlite3', (err) => {
   }
 });
 
-// TODO: Client.fetchUser(id)
-// TODO: let channel = bot.channels.find("name", channel_name);
-
 const ERROR_CODES = {
   INVALID_INPUT: 1 << 0,
   DATABASE_ERROR: 1 << 1,
