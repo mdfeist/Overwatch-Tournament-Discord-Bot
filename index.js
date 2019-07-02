@@ -2,6 +2,7 @@ const fs = require('fs');
 const fetch = require("node-fetch");
 const sqlite3 = require('sqlite3');
 const Discord = require('discord.js');
+const Long = require("long");
 const dateFormat = require('dateformat');
 
 const config = require("./config.json");
@@ -33,15 +34,19 @@ const OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL = 'Overwatch Tournament Teams';
 
 // Text Channels
 const ANNOUNCEMENTS_CHANNEL = 'announcements';
+const BOT_COMMANDS_CHANNEL = 'bot-commands';
 const FORM_SUBMISSION_CHANNEL = 'form-submission';
 const ROLE_SELECTION_CHANNEL = 'role-selection';
 const BNET_SUBMISSION_CHANNEL = 'bnet-submission';
+const SR_SUBMISSION_CHANNEL = 'sr-submission';
 const WAITING_ROOM_CHANNEL = 'waiting-room';
 
 var announcements_channel = null;
+var bot_commands_channel = null;
 var form_submission_channel = null;
 var role_selection_channel = null;
 var bnet_submission_channel = null;
+var sr_submission_channel = null;
 var waiting_room_channel = null;
 
 // Special messages
@@ -126,10 +131,15 @@ commandHandlerForCommandName['me'] = async (msg, args) => {
 
   stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message.\n\n`;
 
-  for (const reaction of role_selection_message.reactions.values()) {
-    let users = await reaction.fetchUsers(1, {before: msg.author.id+1, after: msg.author.id-1});
-    let user = users.values().next().value;
+  let id = Long.fromString(msg.author.id, true);
+  let before = id.add(1).toString();
+  let after = id.subtract(1).toString();
+//  console.log(before);
+//  console.log(after);
 
+  for (const reaction of role_selection_message.reactions.values()) {
+    let users = await reaction.fetchUsers(1, {before: before, after: after});
+    let user = users.values().next().value;
 
     if (user.id == msg.author.id) {
       switch(reaction.emoji.name) {
@@ -514,7 +524,7 @@ async function createRole(guild, name, options = {}) {
 }
 
 function doesChannelHandleUserInput(channel) {
-  let channels = [form_submission_channel, bnet_submission_channel];
+  let channels = [form_submission_channel, bnet_submission_channel, sr_submission_channel];
   return channels.find(c => c.name == channel.name) != null;
 }
 
@@ -527,6 +537,10 @@ function channelHandleUserInput(msg) {
 
     case bnet_submission_channel.name:
       console.log(`New bnet was submitted.`);
+      break
+
+    case sr_submission_channel.name:
+      console.log(`New sr was submitted.`);
       break
   }
 }
@@ -673,6 +687,21 @@ async function setup(guild) {
     );
   });
 
+  // Create Bot Commands
+  createChannel(guild, BOT_COMMANDS_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }).then(channel => {
+    bot_commands_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+        SEND_MESSAGES: true,
+      })
+    );
+  });
+
   // Create Form Submission
   createChannel(guild, FORM_SUBMISSION_CHANNEL, options = {
     type:'text',
@@ -704,6 +733,21 @@ async function setup(guild) {
     parent: category,
   }).then(channel => {
     bnet_submission_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+        SEND_MESSAGES: true,
+      })
+    );
+  });
+
+  // Create sr Submission
+  createChannel(guild, SR_SUBMISSION_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }).then(channel => {
+    sr_submission_channel = channel;
     channel.lockPermissions().then(() =>
       channel.overwritePermissions(guild.defaultRole, {
         VIEW_CHANNEL: true,
