@@ -69,19 +69,79 @@ const PLAYER_ROLE_MESSAGE =
   `;
 
 const helpInstructions = `\`\`\` \
-  ${PREFIX} help\n \
-  ${PREFIX} tournament list \n \
-  ${PREFIX} tournament delete TOURNAMENT_ID \n \
-  ${PREFIX} tournament post TOURNAMENT_ID \n \
-  ${PREFIX} tournament form\n \
-  ${PREFIX} tournament clean \n \
-  ${PREFIX} tournament new \
-  \`\`\``;
+${PREFIX} help \n \
+${PREFIX} me \
+\`\`\``;
 
+
+const mangerHelpInstructions = `\`\`\` \
+${PREFIX} tournament list \n \
+${PREFIX} tournament delete TOURNAMENT_ID \n \
+${PREFIX} tournament post TOURNAMENT_ID \n \
+${PREFIX} tournament form \n \
+${PREFIX} tournament clean \n \
+${PREFIX} tournament new \
+\`\`\``;
 
 const commandHandlerForCommandName = {};
 commandHandlerForCommandName['help'] = (msg, args) => {
-  msg.channel.send(helpInstructions);
+  let instructions = `All users can run the following commands: \n` + helpInstructions;
+
+  if (msg.member.roles.find(r => r.name === OW_TOURNAMENT_MANAGER_ROLE)) {
+    instructions += `As a manager you can also run the following: \n` + mangerHelpInstructions;
+  }
+
+  msg.channel.send(instructions);
+};
+
+commandHandlerForCommandName['me'] = async (msg, args) => {
+  const error_msg = `**Warning:** There was an error accessing the database. Maybe contact a manager or try again at a later time.`;
+
+  let user = await getUser(msg.author.id);
+
+  console.log(user);
+
+  if (!user) {
+    msg.author.send(error_msg);
+    return;
+  }
+
+  /*
+  if (results.error != null) {
+    msg.author.send(error_msg);
+    return;
+  }
+
+  console.log(results.);
+
+  let user = results.user;
+  */
+
+  let stats = 'Hello, here is the current information I have on you:\n\n';
+
+  if (user.bnet) {
+    stats += `- Your current bnet is ${user.bnet}\n`;
+  }
+
+  if (user.sr) {
+    stats += `- Your current skill rating (sr) on record is ${user.sr}\n`;
+  }
+
+  stats += `- You have ${user.wins} wins and ${user.losses} losses with a total of ${user.wins + user.losses}\n\n`;
+
+  if (!user.bnet || !user.sr) {
+    stats += `**Warning:** You are missing the following information:\n\n`;
+
+    if (!user.bnet) {
+      stats += `- We don't have your bnet on file.\n`;
+    }
+
+    if (!user.sr) {
+      stats += `- We don't have your skill rating (sr) on file.\n`;
+    }
+  }
+
+  msg.author.send(stats);
 };
 
 commandHandlerForCommandName['test'] = (msg, args) => {
@@ -132,6 +192,44 @@ commandHandlerForCommandName['tournament'] = (msg, args) => {
   }
 };
 
+// Async sqlite3 functions
+db.getAsync = function (sql) {
+    var that = this;
+    return new Promise(function (resolve, reject) {
+        that.get(sql, function (err, row) {
+            if (err)
+                reject(err);
+            else
+                resolve(row);
+        });
+    });
+};
+
+db.runAsync = function (sql) {
+    var that = this;
+    return new Promise(function (resolve, reject) {
+        that.run(sql, function (err, row) {
+            if (err)
+                reject(err);
+            else
+                resolve(row);
+        });
+    });
+};
+
+async function getUser(discord_id) {
+  var sql_get_user = `SELECT * FROM Users WHERE discord_id="${discord_id}"`;
+  let user = await db.getAsync(sql_get_user);
+
+  if (!user) {
+    var insertSql = `INSERT INTO Users(discord_id) VALUES(${discord_id})`;
+    await db.runAsync(insertSql);
+    user = await db.getAsync(sql_get_user);
+  }
+
+  return user;
+}
+
 function getTournamentForm(msg) {
   let form = new Discord.MessageAttachment('assets/tournament_form.json');
   msg.channel.send('Fill out the form and return it with the new command', form);
@@ -157,7 +255,6 @@ function tournamentToString(obj) {
   return string;
 }
 
-
 async function getAttachment(msg) {
   if (msg.attachments) {
     const getData = async url => {
@@ -181,6 +278,11 @@ async function getAttachment(msg) {
 }
 
 async function newTournament(msg) {
+  if (!msg.member.roles.find(r => r.name === OW_TOURNAMENT_MANAGER_ROLE)) {
+    msg.channel.send(`**Warning:** You do not have permissions to submit a tournament form.`);
+    return;
+  }
+
   // Get attachment
   let json = await getAttachment(msg);
 
@@ -359,6 +461,24 @@ async function createRole(guild, name, options = {}) {
   }
 }
 
+function doesChannelHandleUserInput(channel) {
+  let channels = [form_submission_channel, bnet_submission_channel];
+  return channels.find(c => c.name == channel.name) != null;
+}
+
+function channelHandleUserInput(msg) {
+  switch (msg.channel.name) {
+    case form_submission_channel.name:
+      console.log(`New tournament form was submitted.`);
+      newTournament(msg);
+      break;
+
+    case bnet_submission_channel.name:
+      console.log(`New bnet was submitted.`);
+      break
+  }
+}
+
 function getChannel(guild, name) {
   return guild.channels.find(channel => channel.name == name);
 }
@@ -411,8 +531,7 @@ async function createTeamChannels(guild, number_of_teams) {
     createChannel(guild, team_channel + `-text`, options = {
       type:'text',
       parent: category,
-    }, channel => {
-      announcements_channel = channel;
+    }).then(channel => {
       channel.lockPermissions().then(() => {
         channel.overwritePermissions(guild.defaultRole, {
           VIEW_CHANNEL: false,
@@ -430,8 +549,7 @@ async function createTeamChannels(guild, number_of_teams) {
     createChannel(guild, team_channel + `-voice`, options = {
       type:'voice',
       parent: category,
-    }, channel => {
-      announcements_channel = channel;
+    }).then(channel => {
       channel.lockPermissions().then(() => {
         channel.overwritePermissions(guild.defaultRole, {
           VIEW_CHANNEL: false,
@@ -493,7 +611,7 @@ async function setup(guild) {
   createChannel(guild, ANNOUNCEMENTS_CHANNEL, options = {
     type:'text',
     parent: category,
-  }, channel => {
+  }).then(channel => {
     announcements_channel = channel;
     channel.lockPermissions().then(() =>
       channel.overwritePermissions(guild.defaultRole, {
@@ -507,7 +625,7 @@ async function setup(guild) {
   createChannel(guild, FORM_SUBMISSION_CHANNEL, options = {
     type:'text',
     parent: category,
-  }, channel => {
+  }).then(channel => {
     form_submission_channel = channel;
     channel.lockPermissions();
   });
@@ -516,7 +634,7 @@ async function setup(guild) {
   createChannel(guild, ROLE_SELECTION_CHANNEL, options = {
     type:'text',
     parent: category,
-  }, channel => {
+  }).then(channel => {
     role_selection_channel = channel;
     channel.lockPermissions().then(() =>
       channel.overwritePermissions(guild.defaultRole, {
@@ -532,7 +650,7 @@ async function setup(guild) {
   createChannel(guild, BNET_SUBMISSION_CHANNEL, options = {
     type:'text',
     parent: category,
-  }, channel => {
+  }).then(channel => {
     bnet_submission_channel = channel;
     channel.lockPermissions().then(() =>
       channel.overwritePermissions(guild.defaultRole, {
@@ -547,7 +665,7 @@ async function setup(guild) {
   createChannel(guild, WAITING_ROOM_CHANNEL, options = {
     type:'voice',
     parent: category,
-  }, channel => {
+  }).then(channel => {
     waiting_room_channel = channel;
     channel.lockPermissions().then(() =>
       channel.overwritePermissions(guild.defaultRole, {
@@ -581,6 +699,14 @@ client.on('message', msg => {
     // The bot will only accept commands issued in
     // a guild.
     if (!msg.channel.guild) {
+      return;
+    }
+
+    // Check if message was posted in a special channel
+    if (doesChannelHandleUserInput(msg.channel)) {
+      // Handle special channels
+      // bnet dump, form submission
+      channelHandleUserInput(msg);
       return;
     }
 
