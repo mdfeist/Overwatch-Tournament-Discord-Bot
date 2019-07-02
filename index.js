@@ -120,17 +120,55 @@ commandHandlerForCommandName['me'] = async (msg, args) => {
   let stats = 'Hello, here is the current information I have on you:\n\n';
 
   if (user.bnet) {
-    stats += `- Your current bnet is ${user.bnet}\n`;
+    stats += `Your current bnet is **${user.bnet}**\n\n`;
   }
 
   if (user.sr) {
-    stats += `- Your current skill rating (sr) on record is ${user.sr}\n`;
+    stats += `Your current skill rating (sr) on record is **${user.sr}**\n\n`;
   }
 
-  stats += `- You have ${user.wins} wins and ${user.losses} losses with a total of ${user.wins + user.losses}\n\n`;
+  stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message.\n\n`;
+
+  for (const reaction of role_selection_message.reactions.values()) {
+    let users = await reaction.fetchUsers(1, {before: msg.author.id+1, after: msg.author.id-1});
+    let user = users.values().next().value;
+
+
+    if (user.id == msg.author.id) {
+      switch(reaction.emoji.name) {
+        case '0⃣':
+          stats += `- Main Tank is selected\n`;
+          break;
+
+        case '1⃣':
+          stats += `- Off Tank is selected\n`;
+          break;
+
+        case '2⃣':
+          stats += `- Hitscan DPS is selected\n`;
+          break;
+
+        case '3⃣':
+          stats += `- Projectile DPS is selected\n`;
+          break;
+
+        case '4⃣':
+          stats += `- Main Support is selected\n`;
+          break;
+
+        case '5⃣':
+          stats += `- Off Support is selected\n`;
+          break;
+      }
+    }
+  }
+
+  stats += `\n`;
+
+  stats += `You have ${user.wins} wins and ${user.losses} losses with a total of ${user.wins + user.losses}\n\n`;
 
   if (!user.bnet || !user.sr) {
-    stats += `**Warning:** You are missing the following information:\n\n`;
+    stats += `\n**Warning:** You are missing the following information:\n\n`;
 
     if (!user.bnet) {
       stats += `- We don't have your bnet on file.\n`;
@@ -417,16 +455,33 @@ function postTournament(id) {
 
 async function postPlayerRoleSelection() {
   if (role_selection_channel) {
-    let message = await role_selection_channel.send(PLAYER_ROLE_MESSAGE);
+    var sql = `SELECT * FROM Guild WHERE guild_id="${GUILD_ID}"`;
+    let guild = await db.getAsync(sql);
 
-    role_selection_message = message;
+    if (!guild) {
+      var insertSql = `INSERT INTO Guild(guild_id) VALUES(${GUILD_ID})`;
+      await db.runAsync(insertSql);
+      guild = await db.getAsync(sql);
+    }
 
-    await message.react('0⃣');
-    await message.react('1⃣');
-    await message.react('2⃣');
-    await message.react('3⃣');
-    await message.react('4⃣');
-    await message.react('5⃣');
+    if (!guild.role_message_id) {
+      let message = await role_selection_channel.send(PLAYER_ROLE_MESSAGE);
+
+      role_selection_message = message;
+
+      let main_tank_message = await message.react('0⃣');
+      let off_tank_message = await message.react('1⃣');
+      let hitscan_message = await message.react('2⃣');
+      let projectile_message = await message.react('3⃣');
+      let main_support_message = await message.react('4⃣');
+      let off_support_message =await message.react('5⃣');
+
+      var updateSql = `UPDATE Guild SET role_message_id = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
+
+      await db.runAsync(updateSql);
+    } else {
+       role_selection_message = await role_selection_channel.fetchMessage(guild.role_message_id);
+    }
 
   } else {
     return ERROR_CODES.CHANNEL_NOT_FOUND;
@@ -642,8 +697,8 @@ async function setup(guild) {
         READ_MESSAGE_HISTORY: true,
       })
     );
-    // TODO: Post Role Selection
-    //postPlayerRoleSelection();
+
+    postPlayerRoleSelection();
   });
 
   // Create Bnet Submission
