@@ -34,6 +34,7 @@ const OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL = 'Overwatch Tournament Teams';
 
 // Text Channels
 const ANNOUNCEMENTS_CHANNEL = 'announcements';
+const INSTRUCTIONS_CHANNEL = 'instructions';
 const BOT_COMMANDS_CHANNEL = 'bot-commands';
 const FORM_SUBMISSION_CHANNEL = 'form-submission';
 const ROLE_SELECTION_CHANNEL = 'role-selection';
@@ -42,6 +43,7 @@ const SR_SUBMISSION_CHANNEL = 'sr-submission';
 const WAITING_ROOM_CHANNEL = 'waiting-room';
 
 var announcements_channel = null;
+var instructions_channel = null;
 var bot_commands_channel = null;
 var form_submission_channel = null;
 var role_selection_channel = null;
@@ -51,8 +53,11 @@ var waiting_room_channel = null;
 
 // Special messages
 var role_selection_message = null;
+var player_information_message = null;
 
 // Emojis
+const PLAYER_INFO_EMOJI = 'ℹ';
+
 const ROLE_MAIN_TANK_EMOJI = '0⃣';
 const ROLE_OFF_TANK_EMOJI = '1⃣';
 const ROLE_HITSCAN_EMOJI = '2⃣';
@@ -67,6 +72,10 @@ const OW_TOURNAMENT_MANAGER_ROLE = 'OW Tournament Manager';
 // Dynamic Roles and Channels
 const OW_TOURNAMENT_TEAM_ROLE_PREFIX = 'OW Tournament Team ';
 const OW_TOURNAMENT_TEAM_CHANNEL_PREFIX = 'ow-tournament-team-';
+
+// Messages
+const PLAYER_INFO_MESSAGE =
+  `You can see the information the server has on you at any time by reacting to this message. The information stored is your battletag, skill rating (SR), roles, and win/loss.`;
 
 const PLAYER_ROLE_MESSAGE =
   `Please react to all the roles you play. You can select more than one role. \n\n
@@ -105,81 +114,7 @@ commandHandlerForCommandName['help'] = (msg, args) => {
 };
 
 commandHandlerForCommandName['me'] = async (msg, args) => {
-  const error_msg = `**Warning:** There was an error accessing the database. Maybe contact a manager or try again at a later time.`;
-
-  let user = await getUser(msg.author.id);
-
-  console.log(user);
-
-  if (!user) {
-    msg.author.send(error_msg);
-    return;
-  }
-
-  /*
-  if (results.error != null) {
-    msg.author.send(error_msg);
-    return;
-  }
-
-  console.log(results.);
-
-  let user = results.user;
-  */
-
-  let stats = 'Hello, here is the current information I have on you:\n\n';
-
-  if (user.bnet) {
-    stats += `Your current bnet is **${user.bnet}**\n\n`;
-  }
-
-  if (user.sr) {
-    stats += `Your current skill rating (sr) on record is **${user.sr}**\n\n`;
-  }
-
-  stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message. If you already did and no roles are shown remove the reaction first and then reclick the reaction.\n\n`;
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_TANK_EMOJI))) {
-    stats += `- Main Tank is selected\n`;
-  }
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_TANK_EMOJI))) {
-    stats += `- Off Tank is selected\n`;
-  }
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_HITSCAN_EMOJI))) {
-    stats += `- Hitscan DPS is selected\n`;
-  }
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_PROJECTILE_EMOJI))) {
-    stats += `- Projectile DPS is selected\n`;
-  }
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_SUPPORT_EMOJI))) {
-    stats += `- Main Support is selected\n`;
-  }
-
-  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_SUPPORT_EMOJI))) {
-    stats += `- Off Support is selected\n`;
-  }
-
-  stats += `\n`;
-
-  stats += `You have ${user.wins} wins and ${user.losses} losses with a total of ${user.wins + user.losses}\n\n`;
-
-  if (!user.bnet || !user.sr) {
-    stats += `\n**Warning:** You are missing the following information:\n\n`;
-
-    if (!user.bnet) {
-      stats += `- We don't have your bnet on file.\n`;
-    }
-
-    if (!user.sr) {
-      stats += `- We don't have your skill rating (sr) on file.\n`;
-    }
-  }
-
-  msg.author.send(stats);
+  sendPlayerInformation(msg.author);
 };
 
 commandHandlerForCommandName['test'] = (msg, args) => {
@@ -570,6 +505,116 @@ async function postTournamentCheckIn(id) {
   return 0;
 }
 
+async function sendPlayerInformation(author) {
+  const error_msg = `**Warning:** There was an error accessing the database. Maybe contact a manager or try again at a later time.`;
+
+  let user = await getUser(author.id);
+
+  console.log(user);
+
+  if (!user) {
+    author.send(error_msg);
+    return;
+  }
+
+  /*
+  if (results.error != null) {
+    msg.author.send(error_msg);
+    return;
+  }
+
+  console.log(results.);
+
+  let user = results.user;
+  */
+
+  let stats = 'Hello, here is the current information I have on you:\n\n';
+
+  if (user.bnet) {
+    stats += `Your current bnet is **${user.bnet}**\n\n`;
+  }
+
+  if (user.sr) {
+    stats += `Your current skill rating (sr) on record is **${user.sr}**\n\n`;
+  }
+
+  stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message. If you already did and no roles are shown remove the reaction first and then reclick the reaction.\n\n`;
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_TANK_EMOJI))) {
+    stats += `- Main Tank is selected\n`;
+  }
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_TANK_EMOJI))) {
+    stats += `- Off Tank is selected\n`;
+  }
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_HITSCAN_EMOJI))) {
+    stats += `- Hitscan DPS is selected\n`;
+  }
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_PROJECTILE_EMOJI))) {
+    stats += `- Projectile DPS is selected\n`;
+  }
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_SUPPORT_EMOJI))) {
+    stats += `- Main Support is selected\n`;
+  }
+
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_SUPPORT_EMOJI))) {
+    stats += `- Off Support is selected\n`;
+  }
+
+  stats += `\n`;
+
+  stats += `You have ${user.wins} wins and ${user.losses} losses with a total of ${user.wins + user.losses}\n\n`;
+
+  if (!user.bnet || !user.sr) {
+    stats += `\n**Warning:** You are missing the following information:\n\n`;
+
+    if (!user.bnet) {
+      stats += `- We don't have your bnet on file.\n`;
+    }
+
+    if (!user.sr) {
+      stats += `- We don't have your skill rating (sr) on file.\n`;
+    }
+  }
+
+  author.send(stats);
+}
+
+async function postPlayerInfo() {
+  if (instructions_channel) {
+    var sql = `SELECT * FROM Guild WHERE guild_id="${GUILD_ID}"`;
+    let guild = await db.getAsync(sql);
+
+    if (!guild) {
+      var insertSql = `INSERT INTO Guild(guild_id) VALUES(${GUILD_ID})`;
+      await db.runAsync(insertSql);
+      guild = await db.getAsync(sql);
+    }
+
+    if (!guild.player_info_message) {
+      let message = await instructions_channel.send(PLAYER_INFO_MESSAGE);
+
+      player_info_message = message;
+
+      await message.react(PLAYER_INFO_EMOJI);
+
+      var updateSql = `UPDATE Guild SET player_info_message = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
+
+      await db.runAsync(updateSql);
+    } else {
+       player_info_message = await instructions_channel.fetchMessage(guild.player_info_message);
+    }
+
+  } else {
+    return ERROR_CODES.CHANNEL_NOT_FOUND;
+  }
+
+  return 0;
+}
+
 async function postPlayerRoleSelection() {
   if (role_selection_channel) {
     var sql = `SELECT * FROM Guild WHERE guild_id="${GUILD_ID}"`;
@@ -803,6 +848,23 @@ async function setup(guild) {
     );
   });
 
+  // Create Instructions
+  createChannel(guild, INSTRUCTIONS_CHANNEL, options = {
+    type:'text',
+    parent: category,
+  }).then(channel => {
+    instructions_channel = channel;
+    channel.lockPermissions().then(() =>
+      channel.overwritePermissions(guild.defaultRole, {
+        VIEW_CHANNEL: true,
+        READ_MESSAGE_HISTORY: true,
+      })
+    );
+
+    postPlayerInfo();
+
+  });
+
   // Create Bot Commands
   createChannel(guild, BOT_COMMANDS_CHANNEL, options = {
     type:'text',
@@ -958,6 +1020,12 @@ client.on('message', msg => {
 client.on('messageReactionAdd', (reaction, user) => {
   console.log(role_selection_message.id);
 	console.log(`${user.username} reacted to ${reaction.message.id} with "${reaction.emoji.name}".`);
+
+  if (player_info_message.id == reaction.message.id) {
+    console.log(`Get user inforamtion for ${user.username}`);
+    sendPlayerInformation(user);
+    reaction.remove(user);
+  }
 
   if (role_selection_message.id == reaction.message.id) {
     console.log(`Update role for ${user.username}`);
