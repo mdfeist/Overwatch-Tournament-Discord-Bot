@@ -52,6 +52,14 @@ var waiting_room_channel = null;
 // Special messages
 var role_selection_message = null;
 
+// Emojis
+const ROLE_MAIN_TANK_EMOJI = '0⃣';
+const ROLE_OFF_TANK_EMOJI = '1⃣';
+const ROLE_HITSCAN_EMOJI = '2⃣';
+const ROLE_PROJECTILE_EMOJI = '3⃣';
+const ROLE_MAIN_SUPPORT_EMOJI = '4⃣';
+const ROLE_OFF_SUPPORT_EMOJI = '5⃣';
+
 // Roles
 const OW_TOURNAMENT_BOT_ROLE = 'OW Tournament';
 const OW_TOURNAMENT_MANAGER_ROLE = 'OW Tournament Manager';
@@ -129,45 +137,30 @@ commandHandlerForCommandName['me'] = async (msg, args) => {
     stats += `Your current skill rating (sr) on record is **${user.sr}**\n\n`;
   }
 
-  stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message.\n\n`;
+  stats += `You have the following roles selected. If no roles are displayed below then visit <#${role_selection_channel.id}> and react to the message. If you already did and no roles are shown remove the reaction first and then reclick the reaction.\n\n`;
 
-  let id = Long.fromString(msg.author.id, true);
-  let before = id.add(1).toString();
-  let after = id.subtract(1).toString();
-//  console.log(before);
-//  console.log(after);
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_TANK_EMOJI))) {
+    stats += `- Main Tank is selected\n`;
+  }
 
-  for (const reaction of role_selection_message.reactions.values()) {
-    let users = await reaction.fetchUsers(1, {before: before, after: after});
-    let user = users.values().next().value;
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_TANK_EMOJI))) {
+    stats += `- Off Tank is selected\n`;
+  }
 
-    if (user.id == msg.author.id) {
-      switch(reaction.emoji.name) {
-        case '0⃣':
-          stats += `- Main Tank is selected\n`;
-          break;
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_HITSCAN_EMOJI))) {
+    stats += `- Hitscan DPS is selected\n`;
+  }
 
-        case '1⃣':
-          stats += `- Off Tank is selected\n`;
-          break;
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_PROJECTILE_EMOJI))) {
+    stats += `- Projectile DPS is selected\n`;
+  }
 
-        case '2⃣':
-          stats += `- Hitscan DPS is selected\n`;
-          break;
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_MAIN_SUPPORT_EMOJI))) {
+    stats += `- Main Support is selected\n`;
+  }
 
-        case '3⃣':
-          stats += `- Projectile DPS is selected\n`;
-          break;
-
-        case '4⃣':
-          stats += `- Main Support is selected\n`;
-          break;
-
-        case '5⃣':
-          stats += `- Off Support is selected\n`;
-          break;
-      }
-    }
+  if (user.role & (1 << getRoleIDFromEmoji(ROLE_OFF_SUPPORT_EMOJI))) {
+    stats += `- Off Support is selected\n`;
   }
 
   stats += `\n`;
@@ -277,6 +270,50 @@ async function getUser(discord_id) {
   }
 
   return user;
+}
+
+function getRoleIDFromEmoji(emoji) {
+  switch(emoji) {
+    case ROLE_MAIN_TANK_EMOJI:
+      return 0;
+      break;
+
+    case ROLE_OFF_TANK_EMOJI:
+      return 1;
+      break;
+
+    case ROLE_HITSCAN_EMOJI:
+      return 2;
+      break;
+
+    case ROLE_PROJECTILE_EMOJI:
+      return 3;
+      break;
+
+    case ROLE_MAIN_SUPPORT_EMOJI:
+      return 4;
+      break;
+
+    case ROLE_OFF_SUPPORT_EMOJI:
+      return 5;
+      break;
+  }
+}
+
+async function updateRole(user_id, role_id, clear) {
+  let user = await getUser(user_id);
+
+  let role = user['role'];
+
+  if (clear) {
+    role &= ~(1 << role_id);
+  } else {
+    role |= 1 << role_id;
+  }
+
+  // Update role
+  let updateSql = `UPDATE Users SET role = '${role}' WHERE id = '${user.id}'`;
+  await db.runAsync(updateSql);
 }
 
 async function handleBnetSubmission(msg) {
@@ -549,12 +586,12 @@ async function postPlayerRoleSelection() {
 
       role_selection_message = message;
 
-      let main_tank_message = await message.react('0⃣');
-      let off_tank_message = await message.react('1⃣');
-      let hitscan_message = await message.react('2⃣');
-      let projectile_message = await message.react('3⃣');
-      let main_support_message = await message.react('4⃣');
-      let off_support_message = await message.react('5⃣');
+      let main_tank_message = await message.react(ROLE_MAIN_TANK_EMOJI);
+      let off_tank_message = await message.react(ROLE_OFF_TANK_EMOJI);
+      let hitscan_message = await message.react(ROLE_HITSCAN_EMOJI);
+      let projectile_message = await message.react(ROLE_PROJECTILE_EMOJI);
+      let main_support_message = await message.react(ROLE_MAIN_SUPPORT_EMOJI);
+      let off_support_message = await message.react(ROLE_OFF_SUPPORT_EMOJI);
 
       var updateSql = `UPDATE Guild SET role_message_id = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
 
@@ -859,6 +896,9 @@ client.on('ready', () => {
   setup(guild);
   //createTeamChannels(guild, 4);
 
+  //var date = Date.now();
+  //setTimeout(function(){ console.log(date.toISOString()); }, 10000);
+
   client.user.setStatus("online");
   console.log('Connected and ready.');
 });
@@ -915,11 +955,27 @@ client.on('message', msg => {
   }
 });
 
-/*
 client.on('messageReactionAdd', (reaction, user) => {
+  console.log(role_selection_message.id);
 	console.log(`${user.username} reacted to ${reaction.message.id} with "${reaction.emoji.name}".`);
+
+  if (role_selection_message.id == reaction.message.id) {
+    console.log(`Update role for ${user.username}`);
+    let role_id = getRoleIDFromEmoji(reaction.emoji.name);
+    updateRole(user.id, role_id, false);
+  }
 });
-*/
+
+client.on('messageReactionRemove', (reaction, user) => {
+  console.log(role_selection_message.id);
+	console.log(`${user.username} removed reaction to ${reaction.message.id} with "${reaction.emoji.name}".`);
+
+  if (role_selection_message.id == reaction.message.id) {
+    console.log(`Update role for ${user.username}`);
+    let role_id = getRoleIDFromEmoji(reaction.emoji.name);
+    updateRole(user.id, role_id, true);
+  }
+});
 
 client.on('error', err => {
    console.warn(err);
