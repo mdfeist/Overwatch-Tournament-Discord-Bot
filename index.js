@@ -5,27 +5,23 @@ const Discord = require('discord.js');
 const Long = require("long");
 const dateFormat = require('dateformat');
 
-const config = require("./config.json");
+const Config = require("./config.json");
+const Tournament = require('./src/tournament');
+const Error = require('./src/error');
+const DB = require('./src/db')
+
+// Setup Database
+DB.setupDB('db/tournament.sqlite3');
+const db = DB.database();
 
 // Create Discord Client
 const client = new Discord.Client();
 
-// open the database
-const db = new sqlite3.Database('db/tournament.sqlite3', (err) => {
-  if (err) {
-    console.error(err.message);
-  }
-});
+const PREFIX = Config.prefix;
+const GUILD_ID = Config.guild_id;
 
-const ERROR_CODES = {
-  INVALID_INPUT: 1 << 0,
-  DATABASE_ERROR: 1 << 1,
-  FILE_NOT_FOUND: 1 << 2,
-  CHANNEL_NOT_FOUND: 1 << 3
-};
-
-const PREFIX = config.prefix;
-const GUILD_ID = config.guild_id;
+// Variables
+var tournaments = new Map();
 
 // Channels
 // Category Channels
@@ -169,31 +165,6 @@ commandHandlerForCommandName['tournament'] = (msg, args) => {
   }
 };
 
-// Async sqlite3 functions
-db.getAsync = function (sql) {
-    var that = this;
-    return new Promise(function (resolve, reject) {
-        that.get(sql, function (err, row) {
-            if (err)
-                reject(err);
-            else
-                resolve(row);
-        });
-    });
-};
-
-db.runAsync = function (sql) {
-    var that = this;
-    return new Promise(function (resolve, reject) {
-        that.run(sql, function (err, row) {
-            if (err)
-                reject(err);
-            else
-                resolve(row);
-        });
-    });
-};
-
 async function getUser(discord_id) {
   var sql_get_user = `SELECT * FROM Users WHERE discord_id="${discord_id}"`;
   let user = await db.getAsync(sql_get_user);
@@ -292,26 +263,6 @@ function getTournamentForm(msg) {
   msg.channel.send('Fill out the form and return it with the new command', form);
 }
 
-function tournamentJSONToString(json) {
-  let string = `[` + json['region'] + `][` + json['platform'] + `] **` + json["name"] + `**\n\n` + `**Date:** ` + json["date"] + ` at ` + json["24_hour_time"] + ` EST\n\n` + `**Description:**` + json["description"] + `\n\n` + `**Rules:**` + json["rules"] + `\n\n`;
-
-  return string;
-}
-
-function tournamentToString(obj) {
-  let date = new Date(obj['date']);
-
-  // Offset to EST
-  date = new Date(date.getTime() - 4 * 3600000);
-
-  let string = `[` + obj['region'] + `][` + obj['platform'] + `] **` + obj["name"] + `**\n\n` +
-  `**Date:** ` + dateFormat(date, "GMT:dddd, mmmm dS, yyyy, h:MM TT") + ` EST \n\n` +
-  `**Description:**` + obj["description"] + `\n\n` +
-  `**Rules:**` + obj["rules"] + `\n\n`;
-
-  return string;
-}
-
 async function getAttachment(msg) {
   if (msg.attachments) {
     const getData = async url => {
@@ -350,70 +301,7 @@ async function newTournament(msg) {
   }
 
   // Turn to string
-  let tournament_string = tournamentJSONToString(json);
-  msg.channel.send(tournament_string);
-
-  // Get params
-  let name = json["name"] || "Unnamed";
-  let date = json["date"];
-  let time = json["24_hour_time"];
-
-  if (!date) {
-    msg.channel.send(`**Error:** You need to include a start date.`);
-    return;
-  }
-
-  if (!time) {
-    msg.channel.send(`**Error:** You need to include a start time.`);
-    return;
-  }
-
-  // Check date
-  const date_regex = /^\d{1,2}\/\d{1,2}\/\d{4}$/ ;
-  if (!date.match(date_regex))
-  {
-    msg.channel.send(`**Error:** Date is not in the correct format. It needs to be MM/DD/YYYY.`);
-    return;
-  }
-
-  let [month, day, year] = date.split('/');
-
-  const time_regex = /^\d{1,2}:\d{2}$/ ;
-  if (!time.match(time_regex))
-  {
-    msg.channel.send(`**Error:** Time is not in the correct format. It needs to be hh:mm.`);
-    return;
-  }
-
-  // Get EST Date
-  let start_date = new Date(`${year}-${month}-${day}T${time}:00Z`);
-
-  // Offset to GMT
-  start_date = new Date(start_date.getTime() + 4 * 3600000);
-
-  let region = json["region"] || "na";
-  let platform = json["platform"] || "pc";
-
-  let description = json["description"];
-  let rules = json["rules"];
-
-  console.log({
-    name: name,
-    date: start_date,
-    region: region,
-    platform: platform,
-    description: description,
-    rules: rules
-  })
-
-  // Save to database
-  db.run("INSERT INTO Tournaments(name, date, region, platform, description, rules) VALUES(?,?,?,?,?,?)", [name, start_date.toISOString(), region, platform, description, rules], function(err) {
-    if (err) {
-      console.log(err);
-      //Oops something went wrong
-      msg.channel.send(`**Error:** Unable to save the tournament in the database.`);
-    }
-  });
+  let tournament = Tournament.createTournament(json);
 }
 
 function listTournaments(msg) {
@@ -449,22 +337,30 @@ function deleteTournament(id) {
   return error;
 }
 
-function postTournament(id) {
+async function postTournament(id) {
   console.log(`Post Tournament: ${id}`);
 
-  db.get(`SELECT * FROM Tournaments WHERE id=?`, id, (err, row) => {
-    if (err) {
-      console.log(err);
-      return ERROR_CODES.DATABASE_ERROR;
-    } else {
-      let tournament_string = tournamentToString(row);
-      if (announcements_channel) {
-        announcements_channel.send(tournament_string);
-      } else {
-        return ERROR_CODES.CHANNEL_NOT_FOUND;
-      }
-    }
-  });
+  var sql = `SELECT * FROM Tournaments WHERE id="${id}"`;
+  let tournament = await db.getAsync(sql);
+
+  if (!tournament) {
+    return ERROR_CODES.DATABASE_ERROR;
+  }
+
+  if (tournament['post_message_id']) {
+    return;
+  }
+
+  let tournament_string = tournamentToString(row);
+  if (announcements_channel) {
+    let message = await announcements_channel.send(tournament_string);
+
+    // Update database
+    var updateSql = `UPDATE Tournaments SET post_message_id = '${message.id}' WHERE id = '${id}'`;
+    await db.runAsync(updateSql);
+  } else {
+    return ERROR_CODES.CHANNEL_NOT_FOUND;
+  }
 
   return 0;
 }
@@ -488,7 +384,7 @@ async function postTournamentCheckIn(id) {
   // Offset to EST
   date = new Date(date.getTime() - 4 * 3600000);
 
-  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check by sending the following command to <#${bot_commands_channel.id}>: \`\`\`${PREFIX} me\`\`\`\nYou will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
+  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. \nYou will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
 
   if (announcements_channel) {
     let message = await announcements_channel.send(checkin_string);
@@ -958,8 +854,11 @@ client.on('ready', () => {
   setup(guild);
   //createTeamChannels(guild, 4);
 
-  //var date = Date.now();
-  //setTimeout(function(){ console.log(date.toISOString()); }, 10000);
+  /*
+  var date = Date.now();
+  date = new Date(date + 5000);
+  setTimeout(function(){ console.log(date.toString()); }, date.getTime() - Date.now());
+  */
 
   client.user.setStatus("online");
   console.log('Connected and ready.');
@@ -1049,4 +948,4 @@ client.on('error', err => {
    console.warn(err);
 });
 
-client.login(config.token);
+client.login(Config.token);
