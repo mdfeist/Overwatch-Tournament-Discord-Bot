@@ -232,6 +232,10 @@ commandHandlerForCommandName['tournament'] = (msg, args) => {
       postTournament(args[1]);
       break;
 
+    case "checkin":
+      postTournamentCheckIn(args[1]);
+      break;
+
     default:
       msg.channel.send(`**Warning:** Following command not found: \n\n \`${PREFIX} tournament ${command}\``);
   }
@@ -273,6 +277,42 @@ async function getUser(discord_id) {
   }
 
   return user;
+}
+
+async function handleBnetSubmission(msg) {
+  let bnet = msg.content.trim();
+
+  const bnet_regex = /^[^0-9 ][\S]{3,12}#\d{4,5}$/ ;
+  if (!bnet.match(bnet_regex)) {
+    msg.reply(`Your battletag seems to be incorrect. Make sure you entered it correctly and did not include anything other than the battletag in the message.`);
+    return;
+  }
+
+  // Called because the user will be created if
+  // the user doesn't already exist in database
+  let user = await getUser(msg.author.id);
+
+  // Update battletag
+  var updateSql = `UPDATE Users SET bnet = '${bnet}' WHERE discord_id = '${msg.author.id}'`;
+  await db.runAsync(updateSql);
+}
+
+async function handleSRSubmission(msg) {
+  let sr = msg.content.trim();
+
+  const sr_regex = /^[0-9]{1,4}$/ ;
+  if (!sr.match(sr_regex)) {
+    msg.reply(`Your skill rating (SR) seems to be incorrectly formatted. Make sure you entered it correctly and did not include anything other than your SR in the message.`);
+    return;
+  }
+
+  // Called because the user will be created if
+  // the user doesn't already exist in database
+  let user = await getUser(msg.author.id);
+
+  // Update SR
+  var updateSql = `UPDATE Users SET sr = '${sr}' WHERE discord_id = '${msg.author.id}'`;
+  await db.runAsync(updateSql);
 }
 
 function getTournamentForm(msg) {
@@ -447,15 +487,48 @@ function postTournament(id) {
     } else {
       let tournament_string = tournamentToString(row);
       if (announcements_channel) {
-        announcements_channel.send(tournament_string).then(
-          message => {
-            message.react('✅');
-          });
+        announcements_channel.send(tournament_string);
       } else {
         return ERROR_CODES.CHANNEL_NOT_FOUND;
       }
     }
   });
+
+  return 0;
+}
+
+async function postTournamentCheckIn(id) {
+  console.log(`Post Tournament Checkin: ${id}`);
+
+  var sql = `SELECT * FROM Tournaments WHERE id="${id}"`;
+  let tournament = await db.getAsync(sql);
+
+  if (!tournament) {
+    return ERROR_CODES.DATABASE_ERROR;
+  }
+
+  if (tournament['checkin_message_id']) {
+    return;
+  }
+
+  let date = new Date(tournament['date']);
+
+  // Offset to EST
+  date = new Date(date.getTime() - 4 * 3600000);
+
+  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check by sending the following command to <#${bot_commands_channel.id}>: \`\`\`${PREFIX} me\`\`\`\nYou will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
+
+  if (announcements_channel) {
+    let message = await announcements_channel.send(checkin_string);
+    message.react('✅');
+
+    // Update database
+    var updateSql = `UPDATE Tournaments SET checkin_message_id = '${message.id}' WHERE id = '${id}'`;
+    await db.runAsync(updateSql);
+
+  } else {
+    return ERROR_CODES.CHANNEL_NOT_FOUND;
+  }
 
   return 0;
 }
@@ -481,7 +554,7 @@ async function postPlayerRoleSelection() {
       let hitscan_message = await message.react('2⃣');
       let projectile_message = await message.react('3⃣');
       let main_support_message = await message.react('4⃣');
-      let off_support_message =await message.react('5⃣');
+      let off_support_message = await message.react('5⃣');
 
       var updateSql = `UPDATE Guild SET role_message_id = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
 
@@ -529,6 +602,10 @@ function doesChannelHandleUserInput(channel) {
 }
 
 function channelHandleUserInput(msg) {
+  if (msg.member.roles.find(r => r.name === OW_TOURNAMENT_BOT_ROLE)) {
+    return;
+  }
+
   switch (msg.channel.name) {
     case form_submission_channel.name:
       console.log(`New tournament form was submitted.`);
@@ -537,10 +614,12 @@ function channelHandleUserInput(msg) {
 
     case bnet_submission_channel.name:
       console.log(`New bnet was submitted.`);
+      handleBnetSubmission(msg);
       break
 
     case sr_submission_channel.name:
       console.log(`New sr was submitted.`);
+      handleSRSubmission(msg);
       break
   }
 }
