@@ -372,7 +372,7 @@ async function postTournamentCheckIn(id) {
   // Offset to EST
   let date = new Date(tournament.date.getTime() - 4 * 3600000);
 
-  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. You will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
+  let checkin_string = `**[${tournament.region}][${tournament.platform}] ${tournament.name}** is about to start.\n\nTo compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. You will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
 
   tournament.postCheckin(checkin_string, announcements_channel);
 }
@@ -883,27 +883,33 @@ client.on('message', msg => {
 });
 
 client.on('messageReactionAdd', (reaction, user) => {
+  if (user.bot) {
+    return;
+  }
+
   console.log(role_selection_message.id);
 	console.log(`${user.username} reacted to ${reaction.message.id} with "${reaction.emoji.name}".`);
 
   if (player_info_message.id == reaction.message.id) {
-    if (user.bot) {
-      return;
-    }
-
     console.log(`Get user inforamtion for ${user.username}`);
     sendPlayerInformation(user);
     reaction.remove(user);
+    return;
   }
 
   if (role_selection_message.id == reaction.message.id) {
     console.log(`Update role for ${user.username}`);
     let role_id = getRoleIDFromEmoji(reaction.emoji.name);
     updateRole(user.id, role_id, false);
+    return;
   }
 });
 
 client.on('messageReactionRemove', (reaction, user) => {
+  if (user.bot) {
+    return;
+  }
+
   console.log(role_selection_message.id);
 	console.log(`${user.username} removed reaction to ${reaction.message.id} with "${reaction.emoji.name}".`);
 
@@ -911,6 +917,7 @@ client.on('messageReactionRemove', (reaction, user) => {
     console.log(`Update role for ${user.username}`);
     let role_id = getRoleIDFromEmoji(reaction.emoji.name);
     updateRole(user.id, role_id, true);
+    return;
   }
 });
 
