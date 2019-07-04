@@ -470,7 +470,7 @@ async function postPlayerInfo() {
     }
 
   } else {
-    return ERROR_CODES.CHANNEL_NOT_FOUND;
+    // TODO: Throw Error
   }
 
   return 0;
@@ -507,7 +507,7 @@ async function postPlayerRoleSelection() {
     }
 
   } else {
-    return ERROR_CODES.CHANNEL_NOT_FOUND;
+    // TODO: Throw Error
   }
 
   return 0;
