@@ -4,15 +4,14 @@ const sqlite3 = require('sqlite3');
 const Discord = require('discord.js');
 const Long = require("long");
 const dateFormat = require('dateformat');
+const AsciiTable = require('ascii-table');
 
 const Config = require("./config.json");
 const Tournament = require('./src/tournament');
-const Error = require('./src/error');
-const DB = require('./src/db')
+const DB = require('./src/db');
 
 // Setup Database
 DB.setupDB('db/tournament.sqlite3');
-const db = DB.database();
 
 // Create Discord Client
 const client = new Discord.Client();
@@ -167,12 +166,12 @@ commandHandlerForCommandName['tournament'] = (msg, args) => {
 
 async function getUser(discord_id) {
   var sql_get_user = `SELECT * FROM Users WHERE discord_id="${discord_id}"`;
-  let user = await db.getAsync(sql_get_user);
+  let user = await DB.database().getAsync(sql_get_user);
 
   if (!user) {
     var insertSql = `INSERT INTO Users(discord_id) VALUES(${discord_id})`;
-    await db.runAsync(insertSql);
-    user = await db.getAsync(sql_get_user);
+    await DB.database().runAsync(insertSql);
+    user = await DB.database().getAsync(sql_get_user);
   }
 
   return user;
@@ -219,7 +218,7 @@ async function updateRole(user_id, role_id, clear) {
 
   // Update role
   let updateSql = `UPDATE Users SET role = '${role}' WHERE id = '${user.id}'`;
-  await db.runAsync(updateSql);
+  await DB.database().runAsync(updateSql);
 }
 
 async function handleBnetSubmission(msg) {
@@ -237,7 +236,7 @@ async function handleBnetSubmission(msg) {
 
   // Update battletag
   var updateSql = `UPDATE Users SET bnet = '${bnet}' WHERE discord_id = '${msg.author.id}'`;
-  await db.runAsync(updateSql);
+  await DB.database().runAsync(updateSql);
 }
 
 async function handleSRSubmission(msg) {
@@ -255,7 +254,7 @@ async function handleSRSubmission(msg) {
 
   // Update SR
   var updateSql = `UPDATE Users SET sr = '${sr}' WHERE discord_id = '${msg.author.id}'`;
-  await db.runAsync(updateSql);
+  await DB.database().runAsync(updateSql);
 }
 
 function getTournamentForm(msg) {
@@ -301,24 +300,36 @@ async function newTournament(msg) {
   }
 
   // Turn to string
-  let tournament = Tournament.createTournament(json);
+  try {
+    let tournament = await Tournament.createTournament(json);
+    tournaments.set(tournament.id, tournament);
+  } catch(error) {
+    msg.channel.send(error.message);
+  }
 }
 
 function listTournaments(msg) {
-  db.all(`SELECT id, name FROM Tournaments ORDER BY name`, [], (err, rows) => {
-    if (err) {
-      console.log(err);
-      msg.channel.send(`**Error:** Had trouble querying database.`);
-    } else {
-      msg.channel.send(`Tournaments: (name: id)`);
-      rows.forEach((row) => {
-        msg.channel.send(row.name + `: ` + row.id);
-      });
-    }
-  });
+  var table = new AsciiTable('Tournaments')
+  table.setHeading('id', 'name');
+  for (var tournament of tournaments.values()) {
+    table.addRow(tournament.id, tournament.name);
+  }
+
+  msg.channel.send('\`\`\`' + table.toString() + '\`\`\`');
+}
+
+async function loadTournaments() {
+  let db_tournaments = await Tournament.loadTournaments();
+  for (var tournament of db_tournaments) {
+    tournaments.set(tournament.id, tournament);
+  }
+
+  console.log(tournaments);
 }
 
 function deleteTournament(id) {
+  // TODO: Move to tournament class
+  /*
   let error = 0;
   // Delete from Tournaments table
   db.run(`DELETE FROM Tournaments WHERE id=?`, id, function(err) {
@@ -333,72 +344,37 @@ function deleteTournament(id) {
         error &= ERROR_CODES.DATABASE_ERROR;
     }
   });
-
-  return error;
+  */
+  return 0;
 }
 
 async function postTournament(id) {
   console.log(`Post Tournament: ${id}`);
 
-  var sql = `SELECT * FROM Tournaments WHERE id="${id}"`;
-  let tournament = await db.getAsync(sql);
+  let tournament = await tournaments.get(parseInt(id));
 
   if (!tournament) {
-    return ERROR_CODES.DATABASE_ERROR;
+    throw new Error(`**Error:** There is no tournament with the id: ${id}.`)
   }
 
-  if (tournament['post_message_id']) {
-    return;
-  }
-
-  let tournament_string = tournamentToString(row);
-  if (announcements_channel) {
-    let message = await announcements_channel.send(tournament_string);
-
-    // Update database
-    var updateSql = `UPDATE Tournaments SET post_message_id = '${message.id}' WHERE id = '${id}'`;
-    await db.runAsync(updateSql);
-  } else {
-    return ERROR_CODES.CHANNEL_NOT_FOUND;
-  }
-
-  return 0;
+  tournament.post(announcements_channel);
 }
 
 async function postTournamentCheckIn(id) {
   console.log(`Post Tournament Checkin: ${id}`);
 
-  var sql = `SELECT * FROM Tournaments WHERE id="${id}"`;
-  let tournament = await db.getAsync(sql);
+  let tournament = await tournaments.get(parseInt(id));
 
   if (!tournament) {
-    return ERROR_CODES.DATABASE_ERROR;
+    throw new Error(`**Error:** There is no tournament with the id: ${id}.`)
   }
-
-  if (tournament['checkin_message_id']) {
-    return;
-  }
-
-  let date = new Date(tournament['date']);
 
   // Offset to EST
-  date = new Date(date.getTime() - 4 * 3600000);
+  let date = new Date(tournament.date.getTime() - 4 * 3600000);
 
-  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. \nYou will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
+  let checkin_string = `Tournament [${tournament.region}][${tournament.platform}] ${tournament.name} is about to start. To compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. You will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
 
-  if (announcements_channel) {
-    let message = await announcements_channel.send(checkin_string);
-    message.react('✅');
-
-    // Update database
-    var updateSql = `UPDATE Tournaments SET checkin_message_id = '${message.id}' WHERE id = '${id}'`;
-    await db.runAsync(updateSql);
-
-  } else {
-    return ERROR_CODES.CHANNEL_NOT_FOUND;
-  }
-
-  return 0;
+  tournament.postCheckin(checkin_string, announcements_channel);
 }
 
 async function sendPlayerInformation(author) {
@@ -412,17 +388,6 @@ async function sendPlayerInformation(author) {
     author.send(error_msg);
     return;
   }
-
-  /*
-  if (results.error != null) {
-    msg.author.send(error_msg);
-    return;
-  }
-
-  console.log(results.);
-
-  let user = results.user;
-  */
 
   let stats = 'Hello, here is the current information I have on you:\n\n';
 
@@ -482,12 +447,12 @@ async function sendPlayerInformation(author) {
 async function postPlayerInfo() {
   if (instructions_channel) {
     var sql = `SELECT * FROM Guild WHERE guild_id="${GUILD_ID}"`;
-    let guild = await db.getAsync(sql);
+    let guild = await DB.database().getAsync(sql);
 
     if (!guild) {
       var insertSql = `INSERT INTO Guild(guild_id) VALUES(${GUILD_ID})`;
-      await db.runAsync(insertSql);
-      guild = await db.getAsync(sql);
+      await DB.database().runAsync(insertSql);
+      guild = await DB.database().getAsync(sql);
     }
 
     if (!guild.player_info_message) {
@@ -499,7 +464,7 @@ async function postPlayerInfo() {
 
       var updateSql = `UPDATE Guild SET player_info_message = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
 
-      await db.runAsync(updateSql);
+      await DB.database().runAsync(updateSql);
     } else {
        player_info_message = await instructions_channel.fetchMessage(guild.player_info_message);
     }
@@ -514,12 +479,12 @@ async function postPlayerInfo() {
 async function postPlayerRoleSelection() {
   if (role_selection_channel) {
     var sql = `SELECT * FROM Guild WHERE guild_id="${GUILD_ID}"`;
-    let guild = await db.getAsync(sql);
+    let guild = await DB.database().getAsync(sql);
 
     if (!guild) {
       var insertSql = `INSERT INTO Guild(guild_id) VALUES(${GUILD_ID})`;
-      await db.runAsync(insertSql);
-      guild = await db.getAsync(sql);
+      await DB.database().runAsync(insertSql);
+      guild = await DB.database().getAsync(sql);
     }
 
     if (!guild.role_message_id) {
@@ -536,7 +501,7 @@ async function postPlayerRoleSelection() {
 
       var updateSql = `UPDATE Guild SET role_message_id = ${message.id} WHERE guild_id = "${GUILD_ID}"`;
 
-      await db.runAsync(updateSql);
+      await DB.database().runAsync(updateSql);
     } else {
        role_selection_message = await role_selection_channel.fetchMessage(guild.role_message_id);
     }
@@ -852,6 +817,7 @@ client.on('ready', () => {
   var guild = client.guilds.get(GUILD_ID);
 
   setup(guild);
+  loadTournaments();
   //createTeamChannels(guild, 4);
 
   /*
@@ -921,6 +887,10 @@ client.on('messageReactionAdd', (reaction, user) => {
 	console.log(`${user.username} reacted to ${reaction.message.id} with "${reaction.emoji.name}".`);
 
   if (player_info_message.id == reaction.message.id) {
+    if (user.bot) {
+      return;
+    }
+
     console.log(`Get user inforamtion for ${user.username}`);
     sendPlayerInformation(user);
     reaction.remove(user);

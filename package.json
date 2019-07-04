@@ -9,6 +9,7 @@
   "author": "Thanny",
   "license": "ISC",
   "dependencies": {
+    "ascii-table": "0.0.9",
     "dateformat": "^3.0.3",
     "discord.js": "^11.5.1",
     "long": "^4.0.0",
