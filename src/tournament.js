@@ -10,6 +10,81 @@ module.exports.TOURNAMENT_STATE = {
   FINISHED: 4
 };
 
+function bitCount(n) {
+  n = n - ((n >> 1) & 0x55555555)
+  n = (n & 0x33333333) + ((n >> 2) & 0x33333333)
+  return ((n + (n >> 4) & 0xF0F0F0F) * 0x1010101) >> 24
+}
+
+class Team {
+  constructor(id) {
+    this.id = id;
+    this.players = new Map();
+  }
+
+  getID() {
+    return id;
+  }
+
+  getName() {
+    return `Team: ${this.id}`;
+  }
+
+  addPlayer(user) {
+    this.players.set(user.discord_id, user);
+  }
+
+  getPlayer(discord_id) {
+    return this.players.get(discord_id);
+  }
+
+  isPlayerOnTeam(discord_id) {
+    return this.players.has(discord_id);
+  }
+
+  removePlayer(discord_id) {
+    this.players.delete(discord_id);
+  }
+
+  getPlayerCount() {
+    return this.players.size;
+  }
+
+  getMissingRoles() {
+    let roles = 0;
+    for (var player of this.players) {
+      roles |= player.role;
+    }
+
+    return ~roles;
+  }
+
+  getMissingRolesWithFlex() {
+    let roles = 0;
+    for (var player of this.players) {
+      roles |= player.role;
+    }
+
+    return ~roles;
+  }
+
+  getAverageSR() {
+    let sr = 0;
+    for (var player of this.players) {
+      sr += player.sr;
+    }
+
+    return sr / this.players.size;
+  }
+
+  toString() {
+    let team_string = this.getName() + `:\n`
+    for (var player of this.players) {
+      team_string += player.bnet + ' ' + player.role;
+    }
+  }
+}
+
 module.exports.createTournament = async function(json) {
   console.log("Creating new tournament");
 
@@ -116,6 +191,11 @@ function Tournament(params)
   this.post_message_id = params.post_message_id;
   this.checkin_message_id = params.checkin_message_id;
 
+  this.post_message = params.post_message;
+  this.checkin_message = params.checkin_message;
+
+  this.teams = [];
+
   this.post = async function(channel) {
     if (!channel) {
       throw new Error(`**Error:** The channel is undefined.`);
@@ -126,6 +206,9 @@ function Tournament(params)
     }
 
     let message = await channel.send(this.toString());
+
+    this.post_message_id = message.id;
+    this.post_message = message;
 
     var updateSql = `UPDATE Tournaments SET post_message_id = '${message.id}' WHERE id = '${this.id}'`;
     await DB.database().runAsync(updateSql);
@@ -143,8 +226,107 @@ function Tournament(params)
     let message = await channel.send(msg);
     message.react('✅');
 
+    this.checkin_message_id = message.id;
+    this.checkin_message = message;
+
     var updateSql = `UPDATE Tournaments SET checkin_message_id = '${message.id}' WHERE id = '${this.id}'`;
     await DB.database().runAsync(updateSql);
+  }
+
+  this.createTeams = async function() {
+    // During testing make sure you
+    // have at least this many players
+    const testing_player = 60;
+
+    var sql = `SELECT * FROM Users WHERE discord_id = (SELECT discord_id FROM Users_Tournaments WHERE tournament_id = '${this.id}')`;
+    let users = await DB.database().allAsync(sql);
+
+    function isValid(user) {
+      return user['bnet'] != null && user['sr'] > 0 && user['sr'] < 5000 && user['role'] > 0;
+    }
+
+    let valid_users = users.filter(isValid);
+    let invalid_users = users.filter(!isValid);
+
+    //TODO: Message invalid users
+
+    //Add Fake Users for Testing
+    function randn_sr() {
+      var u = 0, v = 0;
+      while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+      while(v === 0) v = Math.random();
+      let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+      num = num / 10.0 + 0.5; // Translate to 0 -> 1
+      if (num > 1 || num < 0) return randn_sr(); // resample between 0 and 1
+      return Math.round(5000.0*num);
+    }
+
+    for (var i = valid_users.length; i < testing_player; i++) {
+      let bnet = `FakeTester#${i}`;
+      let sr = randn_sr();
+      let role = 0;
+
+      let num_of_roles = Math.floor(Math.random() * 3) + 1;
+
+      for (var i = 0; i < num_of_roles; i++) {
+        role |= (1 << Math.floor(Math.random() * 6));
+      }
+
+      let user = {
+        bnet: bnet,
+        discord_id: null,
+        sr: sr,
+        role: role
+      };
+
+      valid_users.push(user);
+    }
+
+    //TODO: Create teams
+    let player_pool = [...valid_users];
+    let current_team_id = 1;
+    let current_team = new Team(current_team_id);
+
+    while (player_pool.length > 0) {
+      // All roles is 63
+      let missing_roles = 63;
+
+      // Fill missing roles
+      while (missing_roles) {
+        // Get the missing roles
+        missing_roles = current_team.getMissingRoles();
+
+        // Find player to fill role
+        let possible_players = player_pool.filter(player => player.role & missing_roles);
+
+        // If no player can fill the role then stop
+        if (possible_players.length == 0) {
+          break;
+        }
+
+        // Sort so players with the least amount of flex are picked first
+        possible_players.sort(function(a, b) {return bitCount(a) - bitCount(b)});
+
+        // Get player
+        let player = possible_players[0];
+
+        // Add player to team
+        current_team.addPlayer(player);
+
+        // Remove player from player pool
+        let index = player_pool.indexOf(player);
+        player_pool.splice(index, 1);
+      }
+
+      // TODO: If all roles are filled but the team doesn't
+      // have 6 players then find roles that a single player
+      // currently on the team fills mutiple of
+      while (current_team.getPlayerCount() < 6) {
+
+      }
+    }
+
+    //TODO: Create balanced teams based of role and sr
   }
 
   this.save = async function() {

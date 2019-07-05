@@ -27,7 +27,7 @@ var tournaments = new Map();
 const OW_TOURNAMENT_CATEGORY_CHANNEL = 'Overwatch Tournaments';
 const OW_TOURNAMENT_TEAMS_CATEGORY_CHANNEL = 'Overwatch Tournament Teams';
 
-// Text Channels
+// Channel Names
 const ANNOUNCEMENTS_CHANNEL = 'announcements';
 const INSTRUCTIONS_CHANNEL = 'instructions';
 const BOT_COMMANDS_CHANNEL = 'bot-commands';
@@ -37,6 +37,7 @@ const BNET_SUBMISSION_CHANNEL = 'bnet-submission';
 const SR_SUBMISSION_CHANNEL = 'sr-submission';
 const WAITING_ROOM_CHANNEL = 'waiting-room';
 
+// Special Channels
 var announcements_channel = null;
 var instructions_channel = null;
 var bot_commands_channel = null;
@@ -322,6 +323,14 @@ async function loadTournaments() {
   let db_tournaments = await Tournament.loadTournaments();
   for (var tournament of db_tournaments) {
     tournaments.set(tournament.id, tournament);
+
+    if (tournament.post_message_id) {
+      tournament.post_message = await announcements_channel.fetchMessage(tournament.post_message_id);
+    }
+
+    if (tournament.checkin_message_id) {
+      tournament.checkin_message = await announcements_channel.fetchMessage(tournament.checkin_message_id);
+    }
   }
 
   console.log(tournaments);
@@ -375,6 +384,59 @@ async function postTournamentCheckIn(id) {
   let checkin_string = `**[${tournament.region}][${tournament.platform}] ${tournament.name}** is about to start.\n\nTo compete in the tournament please react. Also make sure all your information is correct. You can check in the <#${instructions_channel.id}>, there will be a message and button explaining in more details. You will only have a short time to do this as checkin will close at ` + dateFormat(date, "GMT:h:MM TT") + ` EST`;
 
   tournament.postCheckin(checkin_string, announcements_channel);
+}
+
+async function checkin(user_id, msg_id, checked = true) {
+  console.log('Checking if checkin message');
+  let tournament = null;
+  for (var t of tournaments.values()) {
+    if (t.checkin_message_id == msg_id) {
+      tournament = t;
+      break;
+    }
+  }
+
+  if (tournament) {
+    console.log('Tournament Found');
+    var sql = `SELECT * FROM Users_Tournaments WHERE tournament_id='${tournament.id}' AND discord_id='${user_id}'`;
+
+    // TODO: Handle Error
+    let user = await DB.database().getAsync(sql);
+
+    if (user) {
+      let sql = `UPDATE Users_Tournaments SET checked_in = '${checked}' WHERE tournament_id='${tournament.id}' AND discord_id='${user_id}'`;
+      // TODO: Handle Error
+      await DB.database().runAsync(sql);
+    } else {
+      let sql = `INSERT INTO  Users_Tournaments(tournament_id, discord_id, checked_in) VALUES('${tournament.id}', '${user_id}', '${checked}')`;
+      // TODO: Handle Error
+      await DB.database().runAsync(sql);
+    }
+
+    // Was a tournament checkin message
+    return true;
+  }
+
+  // Was not a tournament checkin message
+  return false;
+}
+
+async function getChecked(tournament_id) {
+  let tournament = null;
+  for (var t of tournaments.values()) {
+    if (t.checkin_message_id == msg_id) {
+      tournament = t;
+      break;
+    }
+  }
+
+  if (tournament) {
+    tournament.createTeams();
+    // Was a tournament checkin message
+    return true;
+  }
+  // Was not a tournament checkin message
+  return false;
 }
 
 async function sendPlayerInformation(author) {
@@ -883,6 +945,8 @@ client.on('message', msg => {
 });
 
 client.on('messageReactionAdd', (reaction, user) => {
+  console.log('messageReactionAdd');
+
   if (user.bot) {
     return;
   }
@@ -903,6 +967,12 @@ client.on('messageReactionAdd', (reaction, user) => {
     updateRole(user.id, role_id, false);
     return;
   }
+
+  // Check if it was a tournament checkin message
+  // If yes the function will check in the user
+  if (checkin(user.id, reaction.message.id, true)) {
+    return;
+  }
 });
 
 client.on('messageReactionRemove', (reaction, user) => {
@@ -917,6 +987,17 @@ client.on('messageReactionRemove', (reaction, user) => {
     console.log(`Update role for ${user.username}`);
     let role_id = getRoleIDFromEmoji(reaction.emoji.name);
     updateRole(user.id, role_id, true);
+    return;
+  }
+
+  if (player_info_message.id == reaction.message.id) {
+    return;
+  }
+
+  // Check if it was a tournament checkin message
+  // If yes the function will remove the user from
+  // the tournament
+  if (checkin(user.id, reaction.message.id, false)) {
     return;
   }
 });
