@@ -114,10 +114,11 @@ commandHandlerForCommandName['me'] = async (msg, args) => {
 };
 
 commandHandlerForCommandName['test'] = (msg, args) => {
-  console.log(announcements_channel);
-  console.log(form_submission_channel);
-  console.log(role_selection_channel);
-  console.log(bnet_submission_channel);
+  //console.log(announcements_channel);
+  //console.log(form_submission_channel);
+  //console.log(role_selection_channel);
+  //console.log(bnet_submission_channel);
+  console.log(waiting_room_channel);
 };
 
 commandHandlerForCommandName['tournament'] = (msg, args) => {
@@ -332,8 +333,6 @@ async function loadTournaments() {
       tournament.checkin_message = await announcements_channel.fetchMessage(tournament.checkin_message_id);
     }
   }
-
-  console.log(tournaments);
 }
 
 function deleteTournament(id) {
