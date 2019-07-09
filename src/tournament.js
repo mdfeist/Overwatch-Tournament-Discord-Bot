@@ -78,7 +78,7 @@ module.exports.createTournament = async function(json) {
 module.exports.loadTournaments = async function() {
   console.log(`Loading Tournaments From Database.`);
 
-  var sql = `SELECT * FROM Tournaments`;
+  let sql = `SELECT * FROM Tournaments`;
   let tournaments = await DB.database().allAsync(sql);
 
   return await tournaments.map(db_tournament => {
@@ -144,7 +144,7 @@ function Tournament(params)
     this.post_message_id = message.id;
     this.post_message = message;
 
-    var updateSql = `UPDATE Tournaments SET post_message_id = '${message.id}' WHERE id = '${this.id}'`;
+    let updateSql = `UPDATE Tournaments SET post_message_id = '${message.id}' WHERE id = '${this.id}'`;
     await DB.database().runAsync(updateSql);
   }
 
@@ -163,7 +163,7 @@ function Tournament(params)
     this.checkin_message_id = message.id;
     this.checkin_message = message;
 
-    var updateSql = `UPDATE Tournaments SET checkin_message_id = '${message.id}' WHERE id = '${this.id}'`;
+    let updateSql = `UPDATE Tournaments SET checkin_message_id = '${message.id}' WHERE id = '${this.id}'`;
     await DB.database().runAsync(updateSql);
   }
 
@@ -171,14 +171,14 @@ function Tournament(params)
     let player_pool = [];
 
     // Create Player Pool
-    for (var i = 0; i < testing_player; i++) {
+    for (let i = 0; i < testing_player; i++) {
       let bnet = `FakeTester#${i}`;
       let sr = utils.randn_sr();
       let role = 0;
 
       let num_of_roles = Math.floor(Math.random() * 3) + 1;
 
-      for (var r = 0; r < num_of_roles; r++) {
+      for (let r = 0; r < num_of_roles; r++) {
         role |= (1 << Math.floor(Math.random() * 6));
       }
 
@@ -197,11 +197,11 @@ function Tournament(params)
     team_creator.randomSwapWithSubs(this.teams, this.subs);
     team_creator.balanceTeams(this.teams, this.subs);
 
-    for (var team of this.teams) {
+    for (let team of this.teams) {
       console.log(`${team.getName()}: (${team.getMinSR()}, ${team.getMaxSR()}) -  ${team.getAverageSR()}`);
     }
 
-    for (var team of this.teams) {
+    for (let team of this.teams) {
       console.log(team.toString());
       console.log(team.validTeamComps());
     }
@@ -210,7 +210,7 @@ function Tournament(params)
     console.log("--------      SUBS      --------");
     console.log("--------------------------------");
     let sub_team = new Team(this.teams.length+1);
-    for (var sub of this.subs) {
+    for (let sub of this.subs) {
       sub_team.addPlayer(sub);
     }
 
@@ -218,7 +218,7 @@ function Tournament(params)
   }
 
   this.createTeams = async function() {
-    var sql = `SELECT * FROM Users WHERE discord_id = (SELECT discord_id FROM Users_Tournaments WHERE tournament_id = '${this.id}')`;
+    let sql = `SELECT * FROM Users WHERE discord_id = (SELECT discord_id FROM Users_Tournaments WHERE tournament_id = '${this.id}')`;
     let users = await DB.database().allAsync(sql);
 
     function isValid(user) {

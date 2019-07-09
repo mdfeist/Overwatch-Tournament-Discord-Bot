@@ -1,6 +1,5 @@
 const AsciiTable = require('ascii-table');
 const utils = require('./utils');
-console.log(utils);
 
 class Team {
   constructor(id) {
@@ -16,12 +15,18 @@ class Team {
     return `Team: ${this.id}`;
   }
 
-  addPlayer(user) {
-    this.players.push(user);
+  addPlayer(player) {
+    this.players.push(player);
   }
 
-  setPlayerAt(user, pos) {
-    this.players[pos] = user;
+  addPlayers(players) {
+    for (let player of players) {
+      this.players.push(player);
+    }
+  }
+
+  setPlayerAt(player, pos) {
+    this.players[pos] = player;
   }
 
 
@@ -57,7 +62,7 @@ class Team {
   // this role
   getRoleCount(role) {
     let count = 0;
-    for (var player of this.players) {
+    for (let player of this.players) {
       if (player.role & (1 << role)) {
         count++;
       }
@@ -68,7 +73,7 @@ class Team {
 
   getRoles() {
     let roles = 0;
-    for (var player of this.players) {
+    for (let player of this.players) {
       roles |= player.role;
     }
 
@@ -114,7 +119,7 @@ class Team {
 
   getMinSR() {
     let min_sr = 5000;
-    for (var player of this.players) {
+    for (let player of this.players) {
       if (min_sr > player.sr) {
         min_sr = player.sr;
       }
@@ -125,7 +130,7 @@ class Team {
 
   getMaxSR() {
     let max_sr = 0;
-    for (var player of this.players) {
+    for (let player of this.players) {
       if (max_sr < player.sr) {
         max_sr = player.sr;
       }
@@ -136,7 +141,7 @@ class Team {
 
   getTotalSR() {
     let sr = 0;
-    for (var player of this.players) {
+    for (let player of this.players) {
       sr += player.sr;
     }
 
@@ -149,10 +154,10 @@ class Team {
 
   table() {
     // Sort by rows
-    var table = new AsciiTable(`Team ${this.id}`)
+    let table = new AsciiTable(`Team ${this.id}`)
     table.setHeading('', '0', '1', '2', '3', '4', '5');
     let row = 0;
-    for (var player of this.players) {
+    for (let player of this.players) {
       let r = player.role;
       table.addRow(row, utils.getRole(r, 0), utils.getRole(r, 1), utils.getRole(r, 2), utils.getRole(r, 3), utils.getRole(r, 4), utils.getRole(r, 5));
       row++;
@@ -162,10 +167,10 @@ class Team {
   }
 
   toString() {
-    let string = `${this.getName()}\n`;
-    for (var player of this.players) {
+    let string = `${this.getName()} - Average SR: ${this.getAverageSR()}\n`;
+    for (let player of this.players) {
       let r = player.role;
-      string += `${player.bnet} - '${utils.getRole(r, 0)}${utils.getRole(r, 1)}${utils.getRole(r, 2)}${utils.getRole(r, 3)}${utils.getRole(r, 4)}${utils.getRole(r, 5)}\n`;
+      string += `${player.bnet} - '${utils.getRole(r, 0)}${utils.getRole(r, 1)}${utils.getRole(r, 2)}${utils.getRole(r, 3)}${utils.getRole(r, 4)}${utils.getRole(r, 5)} - ${player.sr}\n`;
     }
     return string;
   }
